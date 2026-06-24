@@ -87,6 +87,47 @@ const instrumentation = {
 
 This also works for class exports (e.g., `export { MyClass as PublicClass }`).
 
+### Mutable Result
+
+By default a subscriber can observe a function's return value
+(via `message.result`) but cannot change it. Setting
+`mutableResult: true` on a **synchronous** `FunctionQuery` makes
+the wrapper return whatever `message.result` holds after the
+`end` event has published, so an `end` handler can reassign
+`message.result` to mutate the return value. This is useful when
+a function returns another function (or object) that you need to
+wrap, like a factory that returns a per-request handler:
+
+```js
+const instrumentation = {
+    channelName: "create-handler",
+    module: { name: "my-framework", versionRange: ">=1.0.0", filePath: "lib/router.js" },
+    functionQuery: { methodName: "create", kind: "Sync", mutableResult: true },
+};
+```
+
+```js
+const { tracingChannel } = require("node:diagnostics_channel");
+
+tracingChannel("orchestrion:my-framework:create-handler").subscribe({
+    end(message) {
+        const original = message.result;
+        // Replace the returned handler with a wrapped version.
+        message.result = function wrapped(...args) {
+            // ...start a span, etc.
+            return original.apply(this, args);
+        };
+    },
+});
+```
+
+`mutableResult` is only valid with `kind: "Sync"`. Combining it
+with any other kind throws at transform time. On the throw path
+the original error still propagates; the substituted return
+value only applies when the function returns normally. If no
+subscriber reassigns `message.result`, the original return value
+is preserved unchanged.
+
 ### API Reference
 
 ```ts
@@ -108,13 +149,14 @@ type FunctionQuery =
         index?: number | null;
         callbackIndex?: number;
         isExportAlias?: boolean;
+        mutableResult?: boolean;
     }
     | // Match method on objects
-    { methodName: string; kind: FunctionKind; index?: number | null; callbackIndex?: number }
+    { methodName: string; kind: FunctionKind; index?: number | null; callbackIndex?: number; mutableResult?: boolean }
     | // Match standalone function
-    { functionName: string; kind: FunctionKind; index?: number | null; callbackIndex?: number; isExportAlias?: boolean }
+    { functionName: string; kind: FunctionKind; index?: number | null; callbackIndex?: number; isExportAlias?: boolean; mutableResult?: boolean }
     | // Match arrow function or function expression
-    { expressionName: string; kind: FunctionKind; index?: number | null; callbackIndex?: number; isExportAlias?: boolean };
+    { expressionName: string; kind: FunctionKind; index?: number | null; callbackIndex?: number; isExportAlias?: boolean; mutableResult?: boolean };
     | // Match private class methods
     { className: string; privateMethodName: string; kind: FunctionKind; index?: number | null; callbackIndex?: number };
 ```

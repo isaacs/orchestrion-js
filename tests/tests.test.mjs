@@ -394,6 +394,43 @@ describe('ast_query_cjs', () => {
   })
 })
 
+describe('mutable_result_cjs', () => {
+  test('lets a subscriber substitute the synchronous return value via message.result', () => {
+    runTest('mutable_result_cjs', [
+      {
+        channelName: 'create_mutable',
+        module: { name: TEST_MODULE_NAME, versionRange: '>=0.0.1', filePath: TEST_MODULE_PATH },
+        functionQuery: { functionName: 'create', kind: 'Sync', mutableResult: true },
+      },
+      {
+        channelName: 'compute_mutable',
+        module: { name: TEST_MODULE_NAME, versionRange: '>=0.0.1', filePath: TEST_MODULE_PATH },
+        functionQuery: { functionName: 'compute', kind: 'Sync', mutableResult: true },
+      },
+      {
+        channelName: 'boom_mutable',
+        module: { name: TEST_MODULE_NAME, versionRange: '>=0.0.1', filePath: TEST_MODULE_PATH },
+        functionQuery: { functionName: 'boom', kind: 'Sync', mutableResult: true },
+      },
+    ])
+  })
+
+  test('throws when mutableResult is combined with a non-Sync kind', () => {
+    const instrumentor = create([
+      {
+        channelName: 'fetch_mutable_async',
+        module: { name: TEST_MODULE_NAME, versionRange: '>=0.0.1', filePath: TEST_MODULE_PATH },
+        functionQuery: { functionName: 'fetch', kind: 'Async', mutableResult: true },
+      },
+    ])
+    const transformer = instrumentor.getTransformer(TEST_MODULE_NAME, TEST_MODULE_VERSION, TEST_MODULE_PATH)
+    assert.throws(
+      () => transformer.transform('async function fetch () { return 42 }', 'cjs'),
+      /mutableResult is only supported with kind: 'Sync'/
+    )
+  })
+})
+
 describe('polyfill_cjs', () => {
   test('instruments with a custom dc module (cjs)', () => {
     runTest('polyfill_cjs', [
